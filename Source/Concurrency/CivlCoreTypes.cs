@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using Microsoft.Boogie.GraphUtil;
 
 namespace Microsoft.Boogie
 {
@@ -84,18 +85,9 @@ namespace Microsoft.Boogie
       this.proc = proc;
       this.impl = impl;
       this.layerRange = layerRange;
-
+      
       CivlUtil.AddInlineAttribute(proc);
       CivlUtil.AddInlineAttribute(impl);
-
-      // The gate of an action is represented as asserts at the beginning of the procedure body.
-      gate = impl.Blocks[0].cmds.TakeWhile((c, i) => c is AssertCmd).Cast<AssertCmd>().ToList();
-      // We separate the gate from the action
-      impl.Blocks[0].cmds.RemoveRange(0, gate.Count);
-
-      gateUsedGlobalVars = new HashSet<Variable>(VariableCollector.Collect(gate).Where(x => x is GlobalVariable));
-      actionUsedGlobalVars = new HashSet<Variable>(VariableCollector.Collect(impl).Where(x => x is GlobalVariable));
-      modifiedGlobalVars = new HashSet<Variable>(AssignedVariables().Where(x => x is GlobalVariable));
 
       // We usually declare the Boogie procedure and implementation of an atomic action together.
       // Since Boogie only stores the supplied attributes (in particular linearity) in the procedure parameters,
@@ -111,6 +103,14 @@ namespace Microsoft.Boogie
       }
     }
 
+    public virtual void FinishInitialization()
+    {
+      gate = HoistAsserts(impl);
+      gateUsedGlobalVars = new HashSet<Variable>(VariableCollector.Collect(gate).Where(x => x is GlobalVariable));
+      actionUsedGlobalVars = new HashSet<Variable>(VariableCollector.Collect(impl).Where(x => x is GlobalVariable));
+      modifiedGlobalVars = new HashSet<Variable>(AssignedVariables().Where(x => x is GlobalVariable));
+    }
+    
     public bool HasAssumeCmd => impl.Blocks.Any(b => b.Cmds.Any(c => c is AssumeCmd));
 
     protected List<Variable> AssignedVariables()
@@ -120,8 +120,91 @@ namespace Microsoft.Boogie
       {
         cmd.AddAssignedVariables(modifiedVars);
       }
-
       return modifiedVars;
+    }
+    
+    public static List<AssertCmd> HoistAsserts(Implementation impl)
+    {
+      Dictionary<Block, HashSet<AssertCmd>> wlps = new Dictionary<Block, HashSet<AssertCmd>>();
+      Graph<Block> dag = Program.GraphFromBlocks(impl.Blocks, false);
+      foreach (var block in dag.TopologicalSort())
+      {
+        if (block.TransferCmd is ReturnCmd)
+        {
+          var wlp = HoistAsserts(block, new HashSet<AssertCmd>());
+          wlps.Add(block, wlp);
+        }
+        else if (block.TransferCmd is GotoCmd gotoCmd)
+        {
+          var wlp = 
+            HoistAsserts(block, 
+              gotoCmd.labelTargets.Aggregate(
+                Enumerable.Empty<AssertCmd>(), (acc, b) => acc.Union(wlps[b])).ToHashSet());
+          wlps.Add(block, wlp);
+        }
+        else
+        {
+          throw new cce.UnreachableException();
+        }
+      }
+      return wlps[impl.Blocks[0]].Select(assertCmd => Forall(impl.LocVars.Union(impl.OutParams), assertCmd)).ToList();
+    }
+
+    private static HashSet<AssertCmd> HoistAsserts(Block block, HashSet<AssertCmd> postconditions)
+    {
+      for (int i = block.Cmds.Count - 1; i >= 0; i--)
+      {
+        var cmd = block.Cmds[i];
+        if (cmd is AssertCmd assertCmd)
+        {
+          postconditions.Add(assertCmd);
+        } 
+        else if (cmd is AssumeCmd assumeCmd)
+        {
+          postconditions = postconditions
+            .Select(assertCmd => new AssertCmd(assertCmd.tok, Expr.Imp(assumeCmd.Expr, assertCmd.Expr))).ToHashSet();
+        }
+        else if (cmd is AssignCmd assignCmd)
+        {
+          var varToExpr = new Dictionary<Variable, Expr>();
+          var simpleAssignCmd = assignCmd.AsSimpleAssignCmd;
+          for (var j = 0; j < simpleAssignCmd.Lhss.Count; j++)
+          {
+            var lhs = simpleAssignCmd.Lhss[j];
+            var rhs = simpleAssignCmd.Rhss[j];
+            varToExpr.Add(lhs.DeepAssignedVariable, rhs);
+          }
+          var subst = Substituter.SubstitutionFromDictionary(varToExpr);
+          postconditions = postconditions.Select(assertCmd =>
+            new AssertCmd(assertCmd.tok,Substituter.Apply(subst, assertCmd.Expr))).ToHashSet();
+        }
+        else if (cmd is HavocCmd havocCmd)
+        {
+          postconditions = postconditions.Select(assertCmd => Forall(havocCmd.Vars.Select(ie => ie.Decl), assertCmd)).ToHashSet();
+        }
+        else
+        {
+          throw new cce.UnreachableException();
+        }
+      }
+      block.Cmds = block.Cmds.Where(cmd => !(cmd is AssertCmd)).ToList();
+      return postconditions;
+    }
+    
+    private static AssertCmd Forall(IEnumerable<Variable> vars, AssertCmd assertCmd)
+    {
+      var freeObjects = new GSet<object>();
+      assertCmd.Expr.ComputeFreeVariables(freeObjects);
+      var quantifiedVars = freeObjects.OfType<Variable>().Intersect(vars);
+      if (quantifiedVars.Count() == 0)
+      {
+        return assertCmd;
+      }
+      Dictionary<Variable, Variable> varMapping = quantifiedVars.ToDictionary(v => v,
+        v => (Variable)new BoundVariable(Token.NoToken, new TypedIdent(Token.NoToken, v.Name, v.TypedIdent.Type)));
+      var subst = Substituter.SubstitutionFromDictionary(
+        varMapping.Keys.ToDictionary(v => v, v => (Expr)Expr.Ident(varMapping[v])));
+      return new AssertCmd(assertCmd.tok, ExprHelper.ForallExpr(varMapping.Values.ToList(), Substituter.Apply(subst, assertCmd.Expr)));
     }
   }
 
@@ -155,11 +238,16 @@ namespace Microsoft.Boogie
       base(proc, impl, layerRange)
     {
       this.moverType = moverType;
+    }
+    
+    public override void FinishInitialization()
+    {
+      base.FinishInitialization();
       AtomicActionDuplicator.SetupCopy(this, ref firstGate, ref firstImpl, "first_");
       AtomicActionDuplicator.SetupCopy(this, ref secondGate, ref secondImpl, "second_");
       DeclareTriggerFunctions();
     }
-
+    
     public bool IsRightMover
     {
       get { return moverType == MoverType.Right || moverType == MoverType.Both; }

@@ -163,12 +163,15 @@ namespace Microsoft.Boogie
 
     public static IEnumerable<AssertCmd> GetGateAsserts(AtomicAction action, Substitution subst, string msg)
     {
+      Func<AssertCmd, AssertCmd> fullSubst = gate =>
+      {
+        var cmd = (AssertCmd) Substituter.Apply(subst, gate);
+        cmd.Attributes = Substituter.Apply(subst, gate.Attributes);
+        return cmd;
+      };
       foreach (var gate in action.gate)
       {
-        AssertCmd cmd =
-            subst != null
-          ? (AssertCmd) Substituter.Apply(subst, gate)
-          : new AssertCmd(gate.tok, gate.Expr);
+        AssertCmd cmd = subst != null ? fullSubst(gate) : new AssertCmd(gate.tok, gate.Expr);
         cmd.ErrorData = msg;
         yield return cmd;
       }

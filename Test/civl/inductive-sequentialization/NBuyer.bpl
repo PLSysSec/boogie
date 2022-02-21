@@ -131,6 +131,7 @@ modifies QuoteCH, RemCH, DecCH, contribution;
 
   havoc contribution;
 
+  assume {:add_to_pool "INV3", 0, 1, k, k+1, n} true;
   if (*)
   {
     QuoteCH := (lambda i:int :: (lambda q:int :: if buyerID(i) && q == price then 1 else 0));
@@ -139,13 +140,12 @@ modifies QuoteCH, RemCH, DecCH, contribution;
   }
   else if (*)
   {
-    assume
-      {:add_to_pool "INV3", 1, k, k+1}
-      1 <= k && k < n && 0 <= sum(contribution, 1, k) && sum(contribution, 1, k) <= price;
+    assume 1 <= k && k < n && 0 <= sum(contribution, 1, k) && sum(contribution, 1, k) <= price;
     QuoteCH := (lambda i:int :: (lambda q:int :: if buyerID(i) && i > k && q == price then 1 else 0));
     RemCH := (lambda i:int :: (lambda r:int :: if i == k+1 && r == price - sum(contribution, 1, k) then 1 else 0));
     PAs := MapAddPA3(SellerFinish(0), LastBuyer(n), (lambda pa:PA :: if is#MiddleBuyer(pa) && middleBuyerID(pid#MiddleBuyer(pa)) && pid#MiddleBuyer(pa) > k then 1 else 0));
     choice := if lastBuyerID(k+1) then LastBuyer(k+1) else MiddleBuyer(k+1);
+    assume RemCH[k+1][price - sum(contribution, 1, k)] > 0;
   }
   else if (*)
   {
@@ -154,6 +154,7 @@ modifies QuoteCH, RemCH, DecCH, contribution;
     RemCH := (lambda i:int :: (lambda r:int :: if i == n && r == price - sum(contribution, 1, n-1) then 1 else 0));
     PAs := MapAddPA(SingletonPA(SellerFinish(0)), SingletonPA(LastBuyer(n)));
     choice := LastBuyer(n);
+    assume RemCH[n][price - sum(contribution, 1, n-1)] > 0;
   }
   else
   {

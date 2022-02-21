@@ -19,11 +19,10 @@ returns ({:pending_async "A_StartRound"} PAs:[PA]int)
 modifies pendingAsyncs;
 {
   var {:pool "NumRounds"} numRounds: int;
-  assert
-    {:add_to_pool "Round", 0, numRounds}
-    Init(rs, joinedNodes, voteInfo, decision, pendingAsyncs);
+  assert Init(rs, joinedNodes, voteInfo, decision, pendingAsyncs);
   assume
     {:add_to_pool "NumRounds", numRounds}
+    {:add_to_pool "Round", 0, numRounds}
     0 <= numRounds;
   PAs := (lambda pa: PA :: if is#A_StartRound(pa) && round#A_StartRound(pa) == round_lin#A_StartRound(pa) && Round(round#A_StartRound(pa)) && round#A_StartRound(pa) <= numRounds then 1 else 0);
   pendingAsyncs := PAs;
@@ -101,7 +100,7 @@ modifies joinedNodes, voteInfo, decision, pendingAsyncs;
         (forall r: Round :: r < 1 || r > k ==> is#None(voteInfo[r])) &&
         (forall r: Round :: r < 1 || r > k ==> is#None(decision[r]));
       assume
-        {:add_to_pool "Node", m}
+        {:add_to_pool "Node", m, m+1}
         0 <= m && m <= numNodes;
       PAs := StartRoundPlusJoinPlusProposePAs(k, m, numRounds);
       choice := JoinOrProposeChoice(k, m);
@@ -111,7 +110,7 @@ modifies joinedNodes, voteInfo, decision, pendingAsyncs;
         (forall r: Round :: r < 1 || r > k+1 ==> is#None(voteInfo[r])) &&
         (forall r: Round :: r < 1 || r > k ==> is#None(decision[r]));
       assume
-        {:add_to_pool "Node", m}
+        {:add_to_pool "Node", m, m+1}
         0 <= m && m <= numNodes &&
         (forall n: Node :: n < 1 || n > m ==> !ns#VoteInfo(t#Some(voteInfo[k+1]))[n]);
       PAs := StartRoundPlusVotePlusConcludePAs(k, m, value#VoteInfo(t#Some(voteInfo[k+1])), numRounds);
