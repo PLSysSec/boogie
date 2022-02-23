@@ -17,7 +17,7 @@ returns ({:pending_async "A_Vote", "A_Conclude"} PAs:[PA]int)
 modifies voteInfo, pendingAsyncs;
 {
   var {:pool "Round"} maxRound: int;
-  var maxValue: Value;
+  var {:pool "Value"} maxValue: Value;
   var {:pool "NodeSet"} ns: NodeSet;
 
   assert Round(r);
@@ -26,6 +26,8 @@ modifies voteInfo, pendingAsyncs;
   assert is#None(voteInfo[r]);
 
   assume
+    {:add_to_pool "Round", 0, r}
+    {:add_to_pool "Value", maxValue}
     {:add_to_pool "NodeSet", ns}
     true;
 
@@ -49,7 +51,7 @@ modifies voteInfo, pendingAsyncs;
 procedure {:atomic}{:layer 2} A_Conclude(r: Round, v: Value, {:linear_in "perm"} p: Permission)
 modifies decision, pendingAsyncs;
 {
-  var q: NodeSet;
+  var {:pool "NodeSet"} ns: NodeSet;
 
   assert Round(r);
   assert pendingAsyncs[A_Conclude(r, v, p)] > 0;
@@ -57,8 +59,12 @@ modifies decision, pendingAsyncs;
   assert is#Some(voteInfo[r]);
   assert value#VoteInfo(t#Some(voteInfo[r])) == v;
 
+  assume
+    {:add_to_pool "NodeSet", ns}
+    true;
+
   if (*) {
-    assume IsSubset(q, ns#VoteInfo(t#Some(voteInfo[r]))) && IsQuorum(q);
+    assume IsSubset(ns, ns#VoteInfo(t#Some(voteInfo[r]))) && IsQuorum(ns);
     decision[r] := Some(v);
   }
 
