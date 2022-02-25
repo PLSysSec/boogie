@@ -1015,7 +1015,8 @@ namespace Microsoft.Boogie
       // header_last block that was created because of splitting header.
       Dictionary<Block, Block> newBlocksCreated = new Dictionary<Block, Block>();
 
-      bool headRecursion = false; // testing an option to put recursive call before loop body
+      // Optionally put recursive call before loop body.
+      bool headRecursion = CommandLineOptions.Clo.HeadRecursion;
 
       IEnumerable<Block> sortedHeaders = g.SortHeadersByDominance();
       foreach (Block /*!*/ header in sortedHeaders)

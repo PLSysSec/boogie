@@ -769,6 +769,7 @@ namespace Microsoft.Boogie
     public bool PrintInlined = false;
     public bool ExtractLoops = false;
     public bool DeterministicExtractLoops = false;
+    public bool HeadRecursion = false;
 
     // Enables VC generation for Stratified Inlining. 
     // Set programmatically by Corral.
@@ -1286,6 +1287,14 @@ namespace Microsoft.Boogie
 
           return true;
 
+        case "headRecursion":
+          if (ps.ConfirmArgumentCount(0))
+          {
+            HeadRecursion = true;
+          }
+
+          return true;
+
         case "inline":
           if (ps.ConfirmArgumentCount(1))
           {
@@ -1535,6 +1544,7 @@ namespace Microsoft.Boogie
               ps.CheckBooleanFlag("printNecessaryAssumes", ref PrintNecessaryAssumes) ||
               ps.CheckBooleanFlag("useProverEvaluate", ref UseProverEvaluate) ||
               ps.CheckBooleanFlag("deterministicExtractLoops", ref DeterministicExtractLoops) ||
+              ps.CheckBooleanFlag("headRecursion", ref HeadRecursion) ||
               ps.CheckBooleanFlag("verifySeparately", ref VerifySeparately) ||
               ps.CheckBooleanFlag("trustMoverTypes", ref TrustMoverTypes) ||
               ps.CheckBooleanFlag("trustNoninterference", ref TrustNoninterference) ||
