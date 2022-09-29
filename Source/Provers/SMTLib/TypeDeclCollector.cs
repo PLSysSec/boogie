@@ -311,6 +311,11 @@ namespace Microsoft.Boogie.SMTLib
           type.IsRegEx)
         return;
 
+      // HACK: Temporarily prevent Boogie from generating duplicate sort
+      // declarations.
+      if (TypeToString(type) == "|T@#Reg|")
+        return;
+
       CtorType ctorType = type as CtorType;
       if (ctorType != null)
       {
